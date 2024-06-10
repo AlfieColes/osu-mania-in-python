@@ -1,6 +1,7 @@
 import pygame
 import time
 from pathlib import Path
+import GUI
 
 pygame.init()
 pygame.mixer.init()
@@ -25,14 +26,16 @@ LNtop = pygame.image.load(base_dir / "skin/LN top.png")
 LNbody = pygame.image.load(base_dir / "skin/LN body.png")
 noteImage = pygame.image.load(base_dir / "skin/note.png") 
 
+startTime = time.time()
+
 ########## screen ###########
 screen = pygame.display.set_mode((screenWidth, screenHeight), pygame.RESIZABLE)
 screen.fill((0,0,0))
 
 ########## gameplay mods ##########
 scrollSpeed = 33 #pixels per frame
-framerate = 60
-rateMod = 1
+framerate = 120 #music desyncs differently based on framerate????
+rateMod = 1 #put to about 0.997 - 0.99 to fix desync at 60fps
 
 ################idk how to better do this############
 frameRatio = framerate/60
@@ -369,7 +372,7 @@ def readFile(fileName, notesArray, lane1, lane2, lane3, lane4, scrollSpeed, fram
         ycoord /= (1000/framerate) #turning ms to ycoord
         ycoord *= scrollSpeed
         ycoord /= rateMod
-        ycoord += receptor1.ycoord #this is basically to treat the receptor ycoords as 0, so the music sint offset
+        ycoord += receptor1.ycoord #this is basically to treat the receptor ycoords as 0, so the music isnt offset
 
         # lane, xcoord, ycoord, notesArray, laneList, length    
         if int(line[3]) == 128: #if its an ln
@@ -407,6 +410,7 @@ def calcAccuracy(scoresArray):
 
 
 def endScreen(scoresArray, accuracy, eventList):
+    print("Time: ", time.time() - startTime)
     screen.fill((0,0,0))
     running = True
     if accuracy >= 95:
@@ -438,11 +442,24 @@ def endScreen(scoresArray, accuracy, eventList):
 
 
     while running == True:
-        print("E")
 
-        keys = pygame.key.get_pressed() #idk why this doesnt work
-        if keys[pygame.K_q]:
-            running = False
+        #keys = pygame.key.get_pressed() #idk why this doesnt work
+        #if keys[pygame.K_ESCAPE]:
+            #running = False
+
+        #pygame.event.pump() #why tf does this fix it
+
+        eventList = pygame.event.get() #this also works
+        for event in eventList:
+            
+            if event.type == pygame.QUIT:
+                running = False
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+
+
 
     return running
 
@@ -465,30 +482,37 @@ receptor3 = Receptor(center(receptorImage, 3))
 receptor4 = Receptor(center(receptorImage, 4))
 
 
-screen.blit(receptor1.image, (receptor1.xcoord, receptor1.ycoord))
-screen.blit(receptor2.image, (receptor2.xcoord, receptor2.ycoord))
-screen.blit(receptor3.image, (receptor3.xcoord, receptor3.ycoord))
-screen.blit(receptor4.image, (receptor4.xcoord, receptor4.ycoord))
 
 
+song = GUI.main(screen)
 
 LNcover = make_LNcover()
 
 pygame.mixer.music.load(base_dir / "songs/polyriddim.mp3")
 pygame.mixer.music.set_volume(0)
 
+screen.fill((0,0,0))
+screen.blit(receptor1.image, (receptor1.xcoord, receptor1.ycoord))
+screen.blit(receptor2.image, (receptor2.xcoord, receptor2.ycoord))
+screen.blit(receptor3.image, (receptor3.xcoord, receptor3.ycoord))
+screen.blit(receptor4.image, (receptor4.xcoord, receptor4.ycoord))
 
 running = True
 clock = pygame.time.Clock()
 
+
+readFile(base_dir / str("songs/"+song+".txt"), notesArray, lane1, lane2, lane3, lane4, scrollSpeed, framerate, rateMod)
+
 pygame.display.flip()
-readFile(base_dir / "songs/altale.txt", notesArray, lane1, lane2, lane3, lane4, scrollSpeed, framerate, rateMod)
-
-
 time.sleep(2)
 pygame.mixer.music.play()
 
+#currentTime = pygame.time.get_ticks()
+
 while running:
+
+    #print(pygame.time.get_ticks() - currentTime)
+    #currentTime = pygame.time.get_ticks()
 
     clock.tick(framerate)
     screen.fill((0,0,0))
@@ -501,10 +525,15 @@ while running:
 
     combo, notesArray, lane1, lane2, lane3, lane4, scoresArray, judgement, LNcover = keys(eventList, combo, notesArray, lane1, lane2, lane3, lane4, scoresArray, judgement, LNcover)
 
-    ########## moving all notes down ##########
+#fixed it, thanks chatGPT
+#it was skipping over a note whenever one was removed due to it being missed because i was modifying the list while iterating over it
+#this is because the for loop uses an index that incraments by one, and removing an item moves every other item's index down by one, but the for loop's index doesnt go down by one
+#this causes it to skip over an element
+#basically always create a copy of the list if you might change indexes while iterating through it
 
-    for note in notesArray: 
+    for note in notesArray.copy(): #do this to loop through a copy of the list
         note.ycoord += scrollSpeed
+
         if type(note) is LongNote:
             note.start += scrollSpeed
         screen.blit(note.image, (note.xcoord, note.ycoord))
@@ -515,6 +544,7 @@ while running:
             notesArray.remove(note)
             combo = 0
             scoresArray[5] = scoresArray[5] + 1
+
             if note.lane == 1:
                 lane1.remove(note)
             elif note.lane == 2:
@@ -536,12 +566,12 @@ while running:
 
     accuracy = calcAccuracy(scoresArray) #this might cause lag
 
-    comboText = font.render(str(combo), False, (255,255,255)) #combo display
-    accuracyText = font.render(str(accuracy)+"%", False, (255,255,255))
-    judgementText = font.render(str(judgement[0]), False, judgement[1])
+    comboText = font.render(str(combo), True, (255,255,255)) #combo display
+    accuracyText = font.render(str(accuracy)+"%", True, (255,255,255))
+    judgementText = font.render(str(judgement[0]), True, judgement[1])
 
     for x in range (0,6):
-        counter = font.render(str(scoresArray[x]), False, scoresArray[x+6])
+        counter = font.render(str(scoresArray[x]), True, scoresArray[x+6])
         screen.blit(counter, (50, 200+(50*x)))
 
 
